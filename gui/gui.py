@@ -24,7 +24,6 @@ class GUI:
 
     def __init__(self,sosPath):
 
-        
         self.sosReport = report.ReportFile(sosPath)
         self.sosReport.parseDMIDECODE()
         self.sars = self.sosReport.parseSAR()
@@ -164,7 +163,8 @@ class ProcessRiver(pg.PlotWidget):
                     for i in range(len(list(toPlot.keys()))):
                         curveItem = pg.PlotCurveItem(timestamps,toPlot[list(toPlot.keys())[i]],pen=i)
                         self.sarPlots.append({"name":list(toPlot.keys())[i],"plot":curveItem})
-                        #self.p2.addItem(curveItem)
+                        self.p2.addItem(curveItem)
+                        print(list(toPlot.keys())[i])
         
         print("Parsing Process Data for ProcessRiver ........")            
         for i in range(len(self.processNames)):

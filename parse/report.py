@@ -9,6 +9,7 @@ import json
 from bs4 import BeautifulSoup
 import numpy as np
 import pandas as pd
+import itertools
 
 class ReportFile:
     
@@ -358,11 +359,11 @@ class ReportFile:
             messageList.append(messageDict)
         return messageList
                     
-    def orderLogs(self):
+    def orderTimestamps(self):
         
         RSYSLOG = self.parseRsyslog()
-        AUDIT = self.parseAudit()
-        JOURNAL = self.parseJournalLog()
+        #AUDIT = self.parseAudit()
+        #JOURNAL = self.parseJournalLog()
         
         """
             not considering the following files while ordering the logs together :-
@@ -401,46 +402,50 @@ class ReportFile:
                     "timestamp":0.0,
                     "logs":[]
                 }
-                for log in logsInstance["data"]:
-                    
-                    logDict = {
-                        "source" : "RSYSLOG",
-                        "process" : {
-                            "name":"",
-                            "pid":""
-                        },
-                        "message":""
-                    }
-                    newTimestamp = log["timestamp"]
-                    timestampLog["timestamp"] = newTimestamp
-                    proc = re.match("(?P<name>.*)\[(?P<pid>.*)\]",log["process"])
-                    if proc:
-                        proc = proc.groupdict()
-                        logDict["process"]["name"] = proc["name"]
-                        logDict["process"]["pid"] = proc["pid"]
-                    else:
-                        logDict["process"]["name"] = log["process"]
-                        logDict["process"]["pid"] = "none"
-                   
-                    logDict["message"] = log["message"]
                 
-                    if newTimestamp == oldTimestamp:
-                        timestampLog["logs"].append(logDict)
-                    elif newTimestamp != oldTimestamp:
-                        if oldTimestamp not in timestampsRecorded and oldTimestamp is not 0:
-                            timestampsRecorded.append(oldTimestamp)
-                        if newTimestamp not in timestampsRecorded:
-                            timestampsRecorded.append(newTimestamp)
-                        timestampLog = {
-                            "timestamp":float(newTimestamp),
-                            "logs":[]
+                try:
+                    for log in logsInstance["data"]: 
+                        logDict = {
+                            "source" : "RSYSLOG",
+                            "process" : {
+                                "name":"",
+                                "pid":""
+                            },
+                            "message":""
                         }
-                        timestampLog["logs"].append(logDict)
-                    
-                    oldTimestamp = newTimestamp
-                    timestampLogs.append(timestampLog)
-        del(RSYSLOG)
+                        newTimestamp = log["timestamp"]
+                        timestampLog["timestamp"] = newTimestamp
+                        proc = re.match("(?P<name>.*)\[(?P<pid>.*)\]",log["process"])
+                        if proc:
+                            proc = proc.groupdict()
+                            logDict["process"]["name"] = proc["name"]
+                            logDict["process"]["pid"] = proc["pid"]
+                        else:
+                            logDict["process"]["name"] = log["process"]
+                            logDict["process"]["pid"] = "none"
+
+                        logDict["message"] = log["message"]
+
+                        if newTimestamp == oldTimestamp:
+                            timestampLog["logs"].append(logDict)
+                        elif newTimestamp != oldTimestamp:
+                            if oldTimestamp not in timestampsRecorded and oldTimestamp is not 0:
+                                timestampsRecorded.append(oldTimestamp)
+                            if newTimestamp not in timestampsRecorded:
+                                timestampsRecorded.append(newTimestamp)
+                            timestampLog = {
+                                "timestamp":float(newTimestamp),
+                                "logs":[]
+                            }
+                            timestampLog["logs"].append(logDict)
+
+                        oldTimestamp = newTimestamp
+                        timestampLogs.append(timestampLog)
+                except:
+                    print("Error while Parsing "+logsInstance["location"]+" ..........")
         
+        del(RSYSLOG)
+        """
         for logs in AUDIT:
             logs = logs["logs"]
             for log in logs:
@@ -513,7 +518,7 @@ class ReportFile:
                         timestampLogs[i]["logs"].append(logDict)
                     
         del(JOURNAL)
-        
+        """
         return timestampLogs            
                     
     def orderProcesses(self):
@@ -553,7 +558,7 @@ class ReportFile:
         timestampsEncountered = []
         
         processDict = {"name":"","instances":[]}
-        processInstance = {"timestamps":0.0,"processes":[]}
+        processInstance = {"timestamp":0.0,"processes":[]}
         pDict = {"pid":"","message":""}
         
         for logInstance in RSYSLOG["logs"]:
@@ -718,11 +723,69 @@ class ReportFile:
                             else:
                                 infoExtract.append(" ".join(line))
                             
-        for extract in extracts:
-            print(extract)
-                            
-                    
-                    
-                    
-                    
-    
+        #for extract in extracts:
+            #print(extract)
+        
+    def parseLVM2(self):
+        
+        lvmFiles = []
+        lvsScan = []
+        pvsScan = []
+        for f in self.walk("files"):
+            if re.match(".*sos_commands/lvm2/(lvs_|pvs_|vgs_).*",f):
+                lvmFiles.append(f)
+                
+        vgsRecorded = []
+                
+        for f in lvmFiles:
+            if "lvs" in f:
+                with codecs.open(f,"r",encoding='utf-8',errors='ignore') as file:
+                    for line in file.readlines():
+                        lvsScan.append([w for w in line.strip().split(" ") if w is not ""])
+                        
+                lvsScan = lvsScan[2:]
+                lvsScan = [[x[0],x[1]] for x in lvsScan]
+                
+            if "pvs" in f:
+                with codecs.open(f,"r",encoding='utf-8',errors='ignore') as file:
+                    for line in file.readlines():
+                        pvsScan.append([w for w in line.strip().split(" ") if w is not ""])
+                pvsScan = pvsScan[5:-3]
+                pvsScan = [[x[0],x[1]] for x in pvsScan]
+                
+        
+        for lvvg in lvsScan:
+            if lvvg[1] not in vgsRecorded:
+                vgsRecorded.append(lvvg[1])
+        
+        pvsRecorded = [[] for i in vgsRecorded]
+        lvsRecorded = [[] for i in vgsRecorded]
+        
+        for lvvg in lvsScan:
+            lv = lvvg[0]
+            vg = lvvg[1]
+            
+            lvsRecorded[vgsRecorded.index(vg)].append(lv)
+            
+        for pvvg in pvsScan:
+            pv = pvvg[0]
+            vg = pvvg[1]
+            if vg in vgsRecorded:
+                pvsRecorded[vgsRecorded.index(vg)].append(pv)
+            else:
+                vgsRecorded.append(vg)
+                pvsRecorded.append([])
+                pvsRecorded[vgsRecorded.index(vg)].append(pv)
+        
+        allMaps = []
+        for vg in vgsRecorded:
+            for pv in pvsRecorded[vgsRecorded.index(vg)]:
+                try:
+                    for lv in lvsRecorded[vgsRecorded.index(vg)]:
+                        allMaps.append([pv,vg,lv])
+                except:
+                    print()
+        allMaps.sort()
+        allMaps = list(allMaps for allMaps,_ in itertools.groupby(allMaps))
+        
+        return {"mappings":allMaps,"vgs":vgsRecorded[:-2]}
